@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>デッキ編成ツール（完全版 / メモリア名一覧＋コピー）</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#171a2b; --panel-2:#1f2340; --text:#e8ebff;
+    --muted:#a0a6c8; --accent:#7aa2ff; --danger:#ff6b83;
+    --grid-gap:10px; --slot-size:82px; --sidebar-w:360px;
+    --center-min:820px; --center-max:1080px;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    background:linear-gradient(180deg,#0d1020,#0b0e1a 60%);
+    min-height:100vh; position:relative;
+  }
+  /* 背景画像を維持 */
+  body::before{
+    content:""; position:fixed; inset:0;
+    background:url("./assets/bg.jpg") center/cover no-repeat;
+    opacity:.25; z-index:-1; pointer-events:none;
+  }
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0b0f1f;border-bottom:1px solid #1b2040;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:18px;letter-spacing:.02em}
+  header .actions{display:flex;gap:8px}
+  button,select,input[type="text"]{background:var(--panel-2);color:var(--text);border:1px solid #2a2f58;border-radius:8px;height:34px;padding:0 10px;outline:none;transition:.15s;font-size:14px}
+  button:hover{filter:brightness(1.07)} button:active{transform:translateY(1px)}
+  .btn-ok{background:#17352a;border-color:#2a7b57} .btn-danger{background:#3b1620;border-color:#8b2a3f}
+
+  .wrap{display:grid;grid-template-columns:1fr minmax(var(--center-min),var(--center-max)) var(--sidebar-w);gap:16px;padding:16px;align-items:start}
+  .panel{background:var(--panel);border:1px solid #222751;border-radius:14px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  .panel h2{font-size:15px;letter-spacing:.06em;margin:0 0 10px;color:#cbd3ff}
+  .panel.deck{grid-column:2;position:relative}
+  .panel.sidebar{grid-column:3;position:sticky;top:64px;max-height:calc(100vh - 80px);overflow:hidden}
+
+  /* 左：メモリア名一覧 */
+  .panel.name-panel{grid-column:1;position:sticky;top:64px;max-height:calc(100vh - 80px);overflow:auto}
+  .name-search{width:100%;margin:8px 0 10px;height:30px;border-radius:8px;border:1px solid #2a2f58;background:#0b0f29;color:#e8ebff;padding:0 8px}
+  .name-list{display:grid;gap:4px;font-size:14px}
+  .name-item{
+    background:#0a0e25;border:1px solid #2a2f58;border-radius:6px;
+    padding:6px 8px;cursor:pointer;color:#e8ebff;transition:background .1s;
+  }
+  .name-item:hover{background:#1c214a}
+  .copy-toast{
+    position:fixed;left:50%;top:20px;transform:translateX(-50%);
+    background:#1a224a;color:#e8ebff;border:1px solid #2a2f58;
+    padding:8px 14px;border-radius:10px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,.4)
+  }
+
+  .grid{display:grid;gap:var(--grid-gap);grid-template-columns:repeat(5,var(--slot-size));justify-content:start}
+  .slot{width:var(--slot-size);height:var(--slot-size);border-radius:12px;background:#0f132a;border:1px dashed #3a4277;display:grid;place-items:center;position:relative;overflow:hidden}
+  .slot.filled{border-style:solid;border-color:#5561a9}
+  .slot img{width:100%;height:100%;object-fit:cover;transition:none;backface-visibility:hidden;will-change:transform,opacity;transform:translateZ(0)}
+  .slot .remove{position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:50%;border:1px solid #8b2a3f;background:#3b1620;color:#ffd2da;font-weight:900;display:grid;place-items:center;cursor:pointer;font-size:12px}
+  .slot.dragging{opacity:.7;transform:scale(1.04);border-color:#88c7ff;box-shadow:0 0 12px rgba(136,199,255,.45)}
+  .slot.drop-target{outline:2px dashed #88c7ff;outline-offset:2px}
+
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .sidebar .filters{display:grid;gap:8px;grid-template-columns:1fr;margin-bottom:10px}
+  .list{display:grid;gap:8px;height:calc(100vh - 210px);overflow:auto;padding-right:6px}
+  .card{background:#111430;border:1px solid #262c60;border-radius:12px;padding:10px;display:grid;grid-template-columns:48px 1fr auto;gap:10px;align-items:start}
+  .thumb{width:48px;height:48px;border-radius:10px;background:#0b0f29;border:1px solid #293062;overflow:hidden}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .meta{line-height:1.25}
+  .name{font-weight:700}
+  .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .skill{margin-top:6px;font-size:12px;color:#d9e0ff;background:#0a0e25;border:1px solid #2a2f58;border-radius:8px;padding:6px}
+  .skill .title{font-weight:700;margin-right:6px}
+
+  .counts{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px}
+  .count{background:#0a0e25;border:1px solid #2a2f58;padding:6px 10px;border-radius:10px;font-size:12px;color:#c8d2ff}
+  .footer-note{color:#7e86b6;font-size:12px;margin-top:10px}
+  .muted{color:#949bd1}
+  .warn{color:#ffc38d;font-size:12px}
+  /* 右：編成集計 */
+  #summaryPanel{position:absolute;right:12px;top:58px;width:280px;background:#0f132a;border:1px solid #2a2f58;border-radius:12px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:50}
+  #summaryPanel h3{margin:0 0 8px;font-size:14px;color:#dbe2ff}
+  .sum-section{margin-top:10px}
+  .sum-title{font-size:12px;color:#9aa5da;margin-bottom:4px}
+  .sum-list{display:flex;flex-wrap:wrap;gap:6px}
+  .sum-chip{background:#0a0e25;border:1px solid #2a2f58;border-radius:999px;padding:4px 8px;font-size:12px;color:#c8d2ff}
+  .profile{display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:6px}
+  .profile label{font-size:12px;color:#9aa5da;display:grid;gap:4px}
+  .profile input{height:30px;border-radius:8px;border:1px solid #2a2f58;background:#0b0f29;color:#e8ebff;padding:0 8px}
+  /* デッキ詳細 */
+  .deck-list{margin-top:8px;max-height:42vh;overflow:auto;display:grid;gap:8px}
+  .dl-item{background:#0a0e25;border:1px solid #2a2f58;border-radius:10px;padding:8px}
+  .dl-name{font-weight:700}
+  .dl-sub{font-size:12px;color:#9aa5da;margin-top:2px}
+  .dl-skill{font-size:12px;margin-top:4px;line-height:1.35;color:#d9e0ff}
+</style>
+</head>
+<body>
+<header>
+  <h1>デッキ編成ツール（ローカル試作 / 外部データ読み込み）</h1>
+  <div class="actions">
+    <button id="saveBtn" class="btn-ok">保存</button>
+    <button id="loadBtn">読込</button>
+    <button id="resetAllBtn" class="btn-danger">全消去</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- 左：メモリア名一覧（50音順 / クリックでコピー） -->
+  <div class="panel name-panel">
+    <h2>メモリア名一覧（50音順）</h2>
+    <h5>※クリックでコピペ</h5>
+    <input id="memoriaSearch" class="name-search" type="text" placeholder="メモリア名を検索…" />
+    <div id="memoriaList" class="name-list"><div class="muted">読み込み中…</div></div>
+  </div>
+
+  <!-- Center: Deck area -->
+  <div class="panel deck">
+    <!-- 右：編成集計＆プロフィール＆詳細 -->
+    <div id="summaryPanel">
+      <h3>編成集計</h3>
+      <div class="profile">
+        <label>日付 (yyyy/mm/dd)<input id="profileDate" type="text" placeholder="2025/01/23"/></label>
+        <label>プレイヤー<input id="playerName" type="text" placeholder="名前"/></label>
+        <label>プレイヤーID<input id="playerId" type="text" placeholder="123456789"/></label>
+        <label>レギオン<input id="playerLegion" type="text" placeholder="所属レギオン"/></label>
+      </div>
+      <div class="sum-section"><div class="sum-title">属性</div><div id="sumAttr" class="sum-list"></div></div>
+      <div class="sum-section"><div class="sum-title">役割</div><div id="sumRole" class="sum-list"></div></div>
+      <div class="sum-section"><div class="sum-title">スキル</div><div id="sumSkill" class="sum-list"></div></div>
+      <div class="sum-section"><div class="sum-title">デッキ詳細</div><div id="deckList" class="deck-list"></div></div>
+    </div>
+
+    <div class="section-head">
+      <h2>レジェンダリーメモリア（5枠）</h2>
+      <button id="clearLegendary" class="btn-danger" title="レジェンダリーを全消去">CLEAR</button>
+    </div>
+    <div id="legendaryGrid" class="grid"></div>
+
+    <div class="section-head" style="margin-top:16px;">
+      <h2>メモリア（20枠）</h2>
+      <button id="clearNormal" class="btn-danger" title="メモリアを全消去">CLEAR</button>
+    </div>
+    <div id="normalGrid" class="grid"></div>
+
+    <div class="counts" id="counts"></div>
+    <div class="footer-note">
+      データと画像は <code>assets/memoria/</code> から読み込みます。<br>
+      直接開く（<code>file:///</code>）と <span class="warn">fetch がブロック</span>される場合があります。<br>
+      確実に動かすには <code>python -m http.server</code> や VSCode Live Server で起動してください。
+    </div>
+  </div>
+
+  <!-- Right: Sidebar -->
+  <aside class="panel sidebar">
+    <h2>メモリア一覧</h2>
+    <div class="filters">
+      <input id="q" type="text" placeholder="名前・スキルを検索…"/>
+      <div class="row">
+        <select id="attr">
+          <option value="ALL">属性: ALL</option>
+          <option>火</option><option>水</option><option>風</option><option>光</option><option>闇</option>
+        </select>
+        <select id="role">
+          <option value="ALL">役割: ALL</option>
+          <option>通常前衛</option><option>特殊前衛</option>
+          <option>支援</option><option>妨害</option><option>回復</option>
+        </select>
+      </div>
+    </div>
+    <div id="list" class="list"></div>
+  </aside>
+</div>
+
+<script>
+  // ===== Paths =====
+  const DATA_URL = './assets/memoria/data.json';
+  const ICON_DIR = './assets/memoria/icons/';
+
+  // ===== State =====
+  let ALL_MEMORIA = [];
+  const legendarySlots = Array(5).fill(null);
+  const normalSlots    = Array(25).fill(null);
+
+  // ===== Helpers =====
+  const $ = (s)=>document.querySelector(s);
+  const el = (t,p={},...cs)=>{const n=document.createElement(t);Object.assign(n,p);cs.forEach(c=>n.append(c));return n;};
+  const byId = (id)=> ALL_MEMORIA.find(m => String(m.id) === String(id));
+
+  // ===== 左：メモリア名一覧（50音順）=====
+  function renderMemoriaNameList(){
+  const root = document.getElementById('memoriaList');
+  if (!root) return;
+  const q = (document.getElementById('memoriaSearch')?.value || '').trim().toLowerCase();
+
+  // ★ 重複除去
+  const unique = [];
+  const seen = new Set();
+  for (const m of ALL_MEMORIA) {
+    const name = (m.name || '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    unique.push(m);
+  }
+
+  // ★ 50音順にソート
+  const sorted = unique.sort((a,b)=>{
+    const ja = (a.name || '').toString();
+    const jb = (b.name || '').toString();
+    return ja.localeCompare(jb, 'ja');
+  });
+
+  // ★ 検索フィルタ適用
+  const filtered = sorted.filter(m => !q || (m.name || '').toLowerCase().includes(q));
+
+  // ★ 描画
+  root.innerHTML = '';
+  if (!filtered.length){
+    root.append(el('div',{className:'muted',textContent:'該当なし'}));
+    return;
+  }
+
+  filtered.forEach(m=>{
+    const item = el('div',{className:'name-item',textContent:m.name || '(名称なし)'});
+    item.addEventListener('click',()=>{
+      navigator.clipboard.writeText(m.name || '');
+      showCopyToast(m.name || '');
+      const qbox = document.getElementById('q');
+      if (qbox){ qbox.value = m.name; renderList(); qbox.focus(); }
+    });
+    root.append(item);
+  });
+}
+
+
+  function showCopyToast(name){
+    const t=el('div',{className:'copy-toast',textContent:`「${name}」をコピーしました`});
+    document.body.append(t); setTimeout(()=>t.remove(),1500);
+  }
+
+  // ===== Build & Diff Update =====
+  function buildGrids(){
+    const leg=$('#legendaryGrid'), nor=$('#normalGrid'); leg.innerHTML=''; nor.innerHTML='';
+    legendarySlots.forEach((id,i)=> leg.append(slotView('legendary',i,id)));
+    normalSlots.forEach((id,i)=> nor.append(slotView('normal',i,id)));
+    updateCountsAndSummary();
+  }
+  function updateSlot(section,index){
+    const grid= document.querySelector(section==='legendary'?'#legendaryGrid':'#normalGrid');
+    const list= section==='legendary'?legendarySlots:normalSlots;
+    const old= grid.children[index];
+    const neu= slotView(section,index,list[index]);
+    grid.replaceChild(neu,old);
+  }
+  function swapSlots(from,to){
+    const fromList=from.section==='legendary'?legendarySlots:normalSlots;
+    const toList  =to.section  ==='legendary'?legendarySlots:normalSlots;
+    if (from.section===to.section && from.index===to.index) return;
+    const tmp=fromList[from.index]; fromList[from.index]=toList[to.index]; toList[to.index]=tmp;
+    updateSlot(from.section,from.index); updateSlot(to.section,to.index);
+    updateCountsAndSummary();
+  }
+  function updateCountsAndSummary(){
+    renderCounts(); renderSummary(); renderDeckList();
+  }
+
+  // ===== Slot View (D&D) =====
+  function slotView(section,index,id){
+    const wrap=el('div',{className:'slot'+(id?' filled':'')});
+    wrap.draggable=true; wrap.dataset.section=section; wrap.dataset.index=String(index);
+    wrap.addEventListener('dragstart',(e)=>{const list=section==='legendary'?legendarySlots:normalSlots;if(!list[index]){e.preventDefault();return;} e.dataTransfer.setData('text/plain',JSON.stringify({section,index})); wrap.classList.add('dragging');});
+    wrap.addEventListener('dragend',()=>wrap.classList.remove('dragging'));
+    wrap.addEventListener('dragover',(e)=>e.preventDefault());
+    wrap.addEventListener('dragenter',()=>wrap.classList.add('drop-target'));
+    wrap.addEventListener('dragleave',()=>wrap.classList.remove('drop-target'));
+    wrap.addEventListener('drop',(e)=>{e.preventDefault();wrap.classList.remove('drop-target');const from=JSON.parse(e.dataTransfer.getData('text/plain')||'{}');if(from.section==null)return;swapSlots(from,{section,index});});
+    if(id){
+      const mem=byId(id);
+      const img=new Image(); img.loading='lazy'; img.decoding='async'; img.width=82; img.height=82;
+      img.src= ICON_DIR + (mem?.icon || 'missing.png'); img.alt= mem?.name || 'memoria';
+      img.draggable=false; wrap.append(img);
+      const rm=el('div',{className:'remove',title:'削除',textContent:'−'});
+      rm.addEventListener('mousedown',ev=>ev.stopPropagation()); rm.addEventListener('dragstart',ev=>ev.preventDefault());
+      rm.addEventListener('click',()=>removeFrom(section,index)); wrap.append(rm);
+    }else{
+      wrap.append(el('div',{className:'muted',textContent:section==='legendary'?'LEG':'MEM'}));
+    }
+    return wrap;
+  }
+
+  // ===== Sidebar list =====
+  function memoriaCard(m){
+    const addBtn=el('button',{textContent:'＋追加'}); addBtn.addEventListener('click',()=>addToDeck(m));
+    const thumb=el('div',{className:'thumb'}, el('img',{loading:'lazy',alt:m.name,src:ICON_DIR+(m.icon||'missing.png')}));
+    const skillBox=el('div',{className:'skill'}); const sTitle=m.skill_name?el('span',{className:'title',textContent:m.skill_name}):null; const sBody=m.skill_desc?el('span',{textContent:m.skill_desc}):null; if(sTitle||sBody){ if(sTitle)skillBox.append(sTitle); if(sBody)skillBox.append(sBody); }
+    const meta=el('div',{className:'meta'}, el('div',{className:'name',textContent:m.name}), el('div',{className:'sub',textContent:`${m.legendary?'LEG':'MEM'} / 属性:${m.attr} / 役割:${m.role}`}), (sTitle||sBody)?skillBox:el('span',{}));
+    return el('div',{className:'card'}, thumb, meta, addBtn);
+  }
+  function renderList(){
+    const q=$('#q').value.trim().toLowerCase(); const attr=$('#attr').value; const role=$('#role').value; const list=$('#list'); list.innerHTML='';
+    ALL_MEMORIA.filter(m=>{
+      if(attr!=='ALL' && m.attr!==attr) return false;
+      if(role!=='ALL' && m.role!==role) return false;
+      if(q && !((m.name||'').toLowerCase().includes(q) || (m.skill_name||'').toLowerCase().includes(q) || (m.skill_desc||'').toLowerCase().includes(q))) return false;
+      return true;
+    }).forEach(m=> list.append(memoriaCard(m)));
+  }
+
+  // ===== Actions =====
+  function addToDeck(mem){ const list=mem.legendary?legendarySlots:normalSlots; const idx=list.findIndex(v=>v===null); if(idx===-1){alert((mem.legendary?'レジェンダリー':'メモリア')+'枠がいっぱいです');return;} list[idx]=mem.id; updateSlot(mem.legendary?'legendary':'normal',idx); updateCountsAndSummary(); }
+  function removeFrom(section,index){ if(section==='legendary')legendarySlots[index]=null; else normalSlots[index]=null; updateSlot(section,index); updateCountsAndSummary(); }
+  function clearSection(section){ const list=section==='legendary'?legendarySlots:normalSlots; list.fill(null); const len=section==='legendary'?5:25; for(let i=0;i<len;i++) updateSlot(section,i); updateCountsAndSummary(); }
+
+  // ===== Save / Load =====
+  const STORAGE_KEY='deckState.v3';
+  function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify({legendarySlots,normalSlots})); flash('保存しました'); }
+  function loadState(){ const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return flash('保存データがありません'); try{ const {legendarySlots:L,normalSlots:N}=JSON.parse(raw); if(Array.isArray(L)&&L.length===5) L.forEach((v,i)=>legendarySlots[i]=v); if(Array.isArray(N)&&N.length===25) N.forEach((v,i)=>normalSlots[i]=v); buildGrids(); flash('読み込みました'); }catch(e){console.error(e); flash('読込に失敗しました');} }
+
+  // ===== Counts & Summary =====
+  function groupCount(arr,key){ const m={}; arr.forEach(x=>{ const k=key(x); m[k]=(m[k]||0)+1; }); return m; }
+  function renderCounts(){ const ids=[...legendarySlots,...normalSlots].filter(Boolean); const mems=ids.map(byId).filter(Boolean); const byAttr=groupCount(mems,m=>m.attr||'不明'); const byRole=groupCount(mems,m=>m.role||'不明'); const c=$('#counts'); c.innerHTML=''; const add=(label,obj)=>{const text=Object.entries(obj).map(([k,v])=>`${k}:${v}`).join(' / ')||'なし'; c.append(el('div',{className:'count',textContent:`${label} ${text}`}));}; add('属性',byAttr); add('役割',byRole); add('合計',{枚数:ids.length,LEG:legendarySlots.filter(Boolean).length,MEM:normalSlots.filter(Boolean).length});}
+  function normalizeSkillName(name){ if(!name) return ''; let s=String(name).trim().replace(/[\s\u3000]+/g,' '); s=s.replace(/[ABCDＡ-Ｄ]?[\s ]*[IVXⅤⅥⅦⅧⅨ０-９0-9]+$/u,''); return s.trim(); }
+  function renderSummary(){ const ids=[...legendarySlots,...normalSlots].filter(Boolean); const mems=ids.map(byId).filter(Boolean); const byAttr=groupCount(mems,m=>m.attr||'不明'); const byRole=groupCount(mems,m=>m.role||'不明'); const bySkill=groupCount(mems,m=> normalizeSkillName(m.skill_name)||'（スキルなし）'); const fill=(id,obj)=>{ const r=document.getElementById(id); if(!r) return; r.innerHTML=''; Object.entries(obj).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=> r.append(el('div',{className:'sum-chip',textContent:`${k}:${v}`}))); if(!r.children.length) r.append(el('div',{className:'sum-chip',textContent:'なし:0'})); }; fill('sumAttr',byAttr); fill('sumRole',byRole); fill('sumSkill',bySkill); }
+  function renderDeckList(){ const root=$('#deckList'); if(!root) return; root.innerHTML=''; const ids=[...legendarySlots,...normalSlots].filter(Boolean); ids.map(byId).filter(Boolean).forEach(m=>{ root.append(el('div',{className:'dl-item'}, el('div',{className:'dl-name',textContent:m.name||'不明'}), el('div',{className:'dl-sub',textContent:`属性:${m.attr||'不明'} / 役割:${m.role||'不明'}`}), el('div',{className:'dl-skill',textContent:`skill_name: ${m.skill_name||'（なし）'}`}), el('div',{className:'dl-skill',textContent:`skill_desc: ${m.skill_desc||'（なし）'}`}) )); }); if(!root.children.length) root.append(el('div',{className:'dl-item dl-sub',textContent:'（デッキ未選択）'})); }
+
+  // ===== Toast =====
+  function flash(msg){ const t=el('div',{textContent:msg,style:`position:fixed;left:50%;top:18px;transform:translateX(-50%);background:#0b0f29;border:1px solid #293062;color:#e8ebff;padding:8px 12px;border-radius:10px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.4)`}); document.body.append(t); setTimeout(()=>t.remove(),1400); }
+
+  // ===== Profile Save/Load =====
+  function saveProfile(){ const p={name:$('#playerName')?.value||'',legion:$('#playerLegion')?.value||'',date:$('#profileDate')?.value||'',playerId:$('#playerId')?.value||''}; localStorage.setItem('playerProfile', JSON.stringify(p)); }
+  function normalizeYmd(v){ if(!v) return ''; v=String(v).replace(/[^0-9/]/g,''); const m=v.match(/^(\d{4})[/-]?(\d{1,2})[/-]?(\d{1,2})$/); if(!m) return v; const y=m[1],mm=('0'+m[2]).slice(-2),dd=('0'+m[3]).slice(-2); return `${y}/${mm}/${dd}`; }
+  function loadProfile(){ try{ const p=JSON.parse(localStorage.getItem('playerProfile')||'{}'); if(p.date)$('#profileDate').value=p.date; if(p.name)$('#playerName').value=p.name; if(p.playerId)$('#playerId').value=p.playerId; if(p.legion)$('#playerLegion').value=p.legion; }catch{} }
+
+  // ===== Data loader =====
+  async function loadMemoriaData(){
+    try{
+      const res = await fetch(DATA_URL, { cache:'no-store' });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      ALL_MEMORIA = await res.json();
+      renderList();               // 右の一覧
+      renderMemoriaNameList();    // 左の50音リスト
+    }catch(e){
+      console.error('データ読み込み失敗', e);
+      $('#list').innerHTML = '<div class="muted">メモリア一覧を読み込めませんでした。assets/memoria/data.json を確認してください。</div>';
+    }
+  }
+
+  // ===== Events =====
+  $('#saveBtn').addEventListener('click', saveState);
+  $('#loadBtn').addEventListener('click', loadState);
+  $('#resetAllBtn').addEventListener('click', ()=>{ clearSection('legendary'); clearSection('normal'); flash('全消去しました'); });
+  $('#clearLegendary').addEventListener('click', ()=>{ clearSection('legendary'); flash('レジェンダリーを消去'); });
+  $('#clearNormal').addEventListener('click', ()=>{ clearSection('normal'); flash('メモリアを消去'); });
+
+  document.addEventListener('input',(e)=>{
+    if(!e.target) return;
+    if(['playerName','playerLegion','playerId','profileDate'].includes(e.target.id)) saveProfile();
+    if(['q','attr','role'].includes(e.target.id)) renderList();
+    if(e.target.id==='memoriaSearch') renderMemoriaNameList();
+  });
+  document.addEventListener('blur',(e)=>{ if(e.target?.id==='profileDate'){ e.target.value=normalizeYmd(e.target.value); saveProfile(); }}, true);
+
+  // ===== Init =====
+  (async function boot(){
+    loadProfile();
+    await loadMemoriaData();
+    buildGrids(); // 初回だけ全面描画（以後は差分更新）
+  })();
+</script>
+<footer style="margin-top:40px;padding:20px 0;text-align:center;color:#9aa5da;font-size:14px;border-top:1px solid #2a2f58;background:#0b0f1f;">
+  <div style="margin-bottom:6px;color:#cbd3ff;">関連ページリンク</div>
+  <a href="./assets/memoria/memoria.html" style="color:#7aa2ff;text-decoration:none;margin:0 8px;">メモリア一覧ページ</a> |
+  <a href="./メモリア作成.html" style="color:#7aa2ff;text-decoration:none;margin:0 8px;">メモリア作成</a> |
+  <a href="./assets/memoria/memoria.json" style="color:#7aa2ff;text-decoration:none;margin:0 8px;">memoria.json</a>
+  <div style="margin-top:10px;color:#7e86b6;font-size:12px;">© 2025 デッキ作成ツール</div>
+</footer>
+
+</body>
+</html>
